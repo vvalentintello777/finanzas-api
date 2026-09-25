@@ -20,7 +20,9 @@ import 'package:shelf/shelf.dart';
 import 'package:shelf/shelf_io.dart' as io;
 
 Future<void> main(List<String> args) async {
-  final usarMysql = args.contains('--mysql');
+
+final usarMysql = Platform.environment['USE_MYSQL'] == 'true' 
+    || args.contains('--mysql');
 
   late final UsuarioRepositorio usuarioRepo;
   late final MovimientoRepositorio movimientoRepo;
