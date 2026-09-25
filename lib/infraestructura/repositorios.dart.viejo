@@ -1,0 +1,176 @@
+import 'package:crypto/crypto.dart';
+import 'dart:convert';
+import '../config/db.dart';
+import '../dominio/modelos.dart';
+
+String hashPassword(String password) {
+  final bytes = utf8.encode(password);
+  return sha256.convert(bytes).toString();
+}
+
+class UsuarioRepo {
+  Future<Usuario?> porEmail(String email) async {
+    final rs = await Db.conn.execute(
+      'SELECT id, email, nombre FROM usuarios WHERE email = :e',
+      {'e': email},
+    );
+    if (rs.rows.isEmpty) return null;
+    final r = rs.rows.first.assoc();
+    return Usuario(
+      id: int.parse(r['id'].toString()),
+      email: r['email'].toString(),
+      nombre: r['nombre'].toString(),
+    );
+  }
+
+  Future<String?> hashDe(String email) async {
+    final rs = await Db.conn.execute(
+      'SELECT password_hash FROM usuarios WHERE email = :e',
+      {'e': email},
+    );
+    if (rs.rows.isEmpty) return null;
+    return rs.rows.first.assoc()['password_hash'].toString();
+  }
+
+  Future<Usuario> crear(String email, String password, String nombre) async {
+    final hash = hashPassword(password);
+    await Db.conn.execute(
+      'INSERT INTO usuarios (email, password_hash, nombre) VALUES (:e, :p, :n)',
+      {'e': email, 'p': hash, 'n': nombre},
+    );
+    final u = await porEmail(email);
+    return u!;
+  }
+}
+
+class MovimientoRepo {
+  Future<void> crear(Movimiento m) async {
+    await Db.conn.execute(
+      'INSERT INTO movimientos (usuario_id, tipo, monto, categoria, descripcion, metodo_pago, referencia, fecha) '
+      'VALUES (:u, :t, :m, :c, :d, :mp, :r, :f)',
+      {
+        'u': m.usuarioId,
+        't': m.tipo,
+        'm': m.monto,
+        'c': m.categoria,
+        'd': m.descripcion,
+        'mp': m.metodoPago,
+        'r': m.referencia,
+        'f': m.fecha.toIso8601String().substring(0, 10),
+      },
+    );
+  }
+
+  Future<List<Movimiento>> listar(int usuarioId) async {
+    final rs = await Db.conn.execute(
+      'SELECT * FROM movimientos WHERE usuario_id = :u ORDER BY fecha DESC, id DESC',
+      {'u': usuarioId},
+    );
+    return rs.rows.map((r) => Movimiento.fromRow(r.assoc())).toList();
+  }
+
+  Future<void> eliminar(int id, int usuarioId) async {
+    await Db.conn.execute(
+      'DELETE FROM movimientos WHERE id = :i AND usuario_id = :u',
+      {'i': id, 'u': usuarioId},
+    );
+  }
+}
+
+class MetaRepo {
+  Future<void> crear(Meta m) async {
+    await Db.conn.execute(
+      'INSERT INTO metas (usuario_id, nombre, monto_objetivo, monto_actual, fecha_limite, descripcion, completada) '
+      'VALUES (:u, :n, :mo, :ma, :fl, :d, 0)',
+      {
+        'u': m.usuarioId,
+        'n': m.nombre,
+        'mo': m.montoObjetivo,
+        'ma': m.montoActual,
+        'fl': m.fechaLimite?.toIso8601String().substring(0, 10),
+        'd': m.descripcion,
+      },
+    );
+  }
+
+  Future<List<Meta>> listar(int usuarioId) async {
+    final rs = await Db.conn.execute(
+      'SELECT * FROM metas WHERE usuario_id = :u ORDER BY id DESC',
+      {'u': usuarioId},
+    );
+    return rs.rows.map((r) => Meta.fromRow(r.assoc())).toList();
+  }
+
+  Future<void> aportar(int metaId, double monto) async {
+    final hoy = DateTime.now().toIso8601String().substring(0, 10);
+    await Db.conn.execute(
+      'INSERT INTO aportes_meta (meta_id, monto, fecha) VALUES (:m, :mo, :f)',
+      {'m': metaId, 'mo': monto, 'f': hoy},
+    );
+    await Db.conn.execute(
+      'UPDATE metas SET monto_actual = monto_actual + :mo WHERE id = :m',
+      {'mo': monto, 'm': metaId},
+    );
+    await Db.conn.execute(
+      'UPDATE metas SET completada = 1 WHERE id = :m AND monto_actual >= monto_objetivo',
+      {'m': metaId},
+    );
+  }
+
+  Future<void> eliminar(int id, int usuarioId) async {
+    await Db.conn.execute(
+      'DELETE FROM metas WHERE id = :i AND usuario_id = :u',
+      {'i': id, 'u': usuarioId},
+    );
+  }
+}
+
+class DeudaRepo {
+  Future<void> crear(Deuda d) async {
+    await Db.conn.execute(
+      'INSERT INTO deudas (usuario_id, concepto, tipo, monto_total, monto_pagado, fecha_inicio, fecha_limite, interes, descripcion, saldada) '
+      'VALUES (:u, :c, :t, :mt, 0, :fi, :fl, :i, :d, 0)',
+      {
+        'u': d.usuarioId,
+        'c': d.concepto,
+        't': d.tipo,
+        'mt': d.montoTotal,
+        'fi': d.fechaInicio.toIso8601String().substring(0, 10),
+        'fl': d.fechaLimite?.toIso8601String().substring(0, 10),
+        'i': d.interes,
+        'd': d.descripcion,
+      },
+    );
+  }
+
+  Future<List<Deuda>> listar(int usuarioId) async {
+    final rs = await Db.conn.execute(
+      'SELECT * FROM deudas WHERE usuario_id = :u ORDER BY id DESC',
+      {'u': usuarioId},
+    );
+    return rs.rows.map((r) => Deuda.fromRow(r.assoc())).toList();
+  }
+
+  Future<void> pagar(int deudaId, double monto) async {
+    final hoy = DateTime.now().toIso8601String().substring(0, 10);
+    await Db.conn.execute(
+      'INSERT INTO pagos_deuda (deuda_id, monto, fecha) VALUES (:d, :m, :f)',
+      {'d': deudaId, 'm': monto, 'f': hoy},
+    );
+    await Db.conn.execute(
+      'UPDATE deudas SET monto_pagado = monto_pagado + :m WHERE id = :d',
+      {'m': monto, 'd': deudaId},
+    );
+    await Db.conn.execute(
+      'UPDATE deudas SET saldada = 1 WHERE id = :d AND monto_pagado >= monto_total',
+      {'d': deudaId},
+    );
+  }
+
+  Future<void> eliminar(int id, int usuarioId) async {
+    await Db.conn.execute(
+      'DELETE FROM deudas WHERE id = :i AND usuario_id = :u',
+      {'i': id, 'u': usuarioId},
+    );
+  }
+}
