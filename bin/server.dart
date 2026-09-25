@@ -30,7 +30,7 @@ Future<void> main(List<String> args) async {
 
   if (usarMysql) {
     await Db.init();
-    print('[Adaptador] MySQL conectado a finanzas_db');
+    print('[Adaptador] MySQL conectado a la base de datos');
     usuarioRepo = UsuarioRepoMysql();
     movimientoRepo = MovimientoRepoMysql();
     metaRepo = MetaRepoMysql();
@@ -57,9 +57,10 @@ Future<void> main(List<String> args) async {
       .addMiddleware(_cors())
       .addHandler(api.router.call);
 
-final port = int.tryParse(Platform.environment['PORT'] ?? '8080') ?? 8080;
-await io.serve(handler, InternetAddress.anyIPv4, port);
-print('API escuchando en http://0.0.0.0:$port');
+  final port = int.tryParse(Platform.environment['PORT'] ?? '8080') ?? 8080;
+  await io.serve(handler, InternetAddress.anyIPv4, port);
+  print('API escuchando en http://0.0.0.0:$port');
+}
 
 Middleware _cors() {
   const headers = {

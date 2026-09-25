@@ -18,6 +18,7 @@ class Db {
       userName: user,
       password: password,
       databaseName: database,
+      secure: true,  // ← SSL para Aiven
     );
     await _conn.connect();
   }
